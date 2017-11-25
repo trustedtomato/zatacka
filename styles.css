@@ -3,10 +3,24 @@
 	padding: 0;
 }
 html, body{
+	font-family: Arial, sans-serif;
 	position: absolute;
 	left: 0;
 	top: 0;
 	width: 100%;
 	height: 100%;
 	background-color: black;
+}
+#scores{
+	padding: 4px;
+	font-size: 20px;
+	position: fixed;
+	right: 0;
+	top: 0;
+	color: white;
+}
+canvas{
+	position: fixed;
+	left: 0;
+	top: 0;
 }

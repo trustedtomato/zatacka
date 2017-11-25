@@ -1,0 +1,30 @@
+{
+  "name": "zatacka",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "devDependencies": {
+    "typescript": "^2.6.1"
+  },
+  "scripts": {
+    "watch": "tsc -w",
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trustedtomato/zatacka.git"
+  },
+  "keywords": [
+    "Zatacka",
+    "Curve",
+    "Fever",
+    "Achtung",
+    "Die",
+    "Kurve!"
+  ],
+  "author": "Halasi Tamás",
+  "bugs": {
+    "url": "https://github.com/trustedtomato/zatacka/issues"
+  },
+  "homepage": "https://github.com/trustedtomato/zatacka#readme"
+}
