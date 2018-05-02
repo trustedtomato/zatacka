@@ -3,7 +3,8 @@
 	padding: 0;
 }
 html, body{
-	font-family: Arial, sans-serif;
+	cursor: none;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 	position: absolute;
 	left: 0;
 	top: 0;
@@ -11,16 +12,50 @@ html, body{
 	height: 100%;
 	background-color: black;
 }
+#game{
+	display: flex;
+	justify-content: end;
+}
 #scores{
-	padding: 4px;
+	margin-top: 0px;
+	display: flex;
+	flex-direction: column;
 	font-size: 20px;
-	position: fixed;
-	right: 0;
-	top: 0;
 	color: white;
+}
+#scores > *{
+	margin-left: 8px;
 }
 canvas{
 	position: fixed;
 	left: 0;
 	top: 0;
+}
+#start-screen{
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	flex-flow: column;
+	color: white;
+}
+#start-screen h1{
+	font-weight: 500;
+}
+#start-screen td{
+	color: var(--main-color);
+	padding: 8px;
+	margin: 0;
+	border: 1px solid white;
+}
+#start-screen table{
+	margin: 32px;
+	table-layout: fixed;
+	border-collapse: collapse;
+	width: 100%;
+	max-width: 400px;
+	color: white;
+}
+.important{
+	font-family: 'Courier New', Courier, monospace;
 }
