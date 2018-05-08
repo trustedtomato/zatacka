@@ -34,6 +34,64 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('keydown', e => {
 	e.preventDefault();
 });
+const colorToRGBArr = str => {
+	const colorArr = new Uint8Array(3);
+	colorArr.set(str.split(/\s*,\s*/g));
+	return colorArr;
+};
+class CanvasRGBDataManager{
+	constructor(canvas){
+		this.width = canvas.width;
+		this.height = canvas.height;
+		this.canvas = canvas;
+		this.ctx = canvas.getContext('2d');
+		this.clear();
+	}
+	clear(){
+		this.ctx.clearRect(0, 0, this.width, this.height);
+		this.data = new Uint8ClampedArray(this.width * this.height * 3);
+	}
+	setColor(str){
+		this.ctx.fillStyle = 'rgb(' + str + ')';
+		this.color = colorToRGBArr(str);
+	}
+	fillRect(x, y, width, height){
+		if(width === 0 || height === 0) return;
+		this.ctx.fillRect(x, y, width, height);
+		let index = (y * this.width + x) * 3;
+		this.data.set(this.color, index);
+
+		let i, j;
+		for(i = index + 3; i < index + width * 3; i += 3){
+			this.data.copyWithin(i, index, index + 3);
+		}
+		for(j = index + this.width * 3; j < index + height * this.width * 3; j += this.width * 3){
+			this.data.copyWithin(j, index, i);
+		}
+	}
+	getPixel(x, y){
+		const index = (y * this.width + x) * 3;
+		return this.data.subarray(index, index + 3);
+	}
+	createClipboard(){
+		const self = this;
+		const canvas = document.createElement('canvas');
+		canvas.width = this.width;
+		canvas.height = this.height;
+		const ctx = canvas.getContext('2d');
+		let data = this.data.slice();
+		return{
+			copy(){
+				ctx.drawImage(self.canvas, 0, 0);
+				data.set(self.data);
+			},
+			paste(){
+				self.data.set(data);
+				self.ctx.drawImage(canvas, 0, 0);
+			}
+		};
+	}
+}
 
 
 /*--- impure helper functions ---*/
@@ -70,27 +128,14 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		return {scene: previousScene};
 	}
 
-	const canvases = [
-		document.getElementById('maincan'),
-		document.createElement('canvas'),
-		document.getElementById('upmover')
-	];
-	const [canvas, copyCanvas, upMover] = canvases;
-	window.ctx = canvas.getContext('2d', {alpha: false});
-	const copyCtx = copyCanvas.getContext('2d', {alpha: false});
-	const upmoverCtx = upmover.getContext('2d');
-	const scoresEl = document.getElementById('scores');
-
 	const length = 10;
 	const scoreBoardWidth = 40;
 	const width = floor(window.innerWidth - scoreBoardWidth);
 	const height = floor(window.innerHeight);
-	scoresEl.style.width = window.innerWidth - width;
 	// speed should not be larger than 1
 	const speed = 1;
 	const angularSpeed = PI / 140 * speed;
 	const circleRadius = speed / angularSpeed;
-	const inheriting = false;
 	const holeSize = floor(20 / speed);
 	const holeCycle = 160;
 	const holeFrom = holeCycle - holeSize;
@@ -112,13 +157,26 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	const wall = 8;
 	const padding = wall + PI / angularSpeed * 0.75;
 	
+	const canvases = [
+		document.getElementById('maincan'),
+		document.getElementById('upmover')
+	];
+	const [canvas, upMover] = canvases;
+	window.ctx = canvas.getContext('2d', {alpha: false});
+	const scoresEl = document.getElementById('scores');
+	scoresEl.style.width = window.innerWidth - width;
+
 	for(const canvas of canvases){
 		canvas.width = width;
 		canvas.height = height;
 	}
 
+	const canvasManager = new CanvasRGBDataManager(canvas);
+	console.log('estimated memory usage: ', 2 * window.innerWidth * window.innerHeight * 3 / 1024 / 1024 + ' MiB');
+	const canvasClipboard = canvasManager.createClipboard();
+
 	const colors = new Set(snakeTypes.map(snakeType => snakeType.color).concat(['255,255,255']));
-	const scores = new WeakMap(snakeTypes.map(snakeType => [snakeType, 0]));
+	const scores = mapWeakMap(snakeTypes, snakeType => 0);
 	removeChildren(scoresEl);
 	const scoreTextNodes = new WeakMap(snakeTypes.map(snakeType => {
 		const el = document.createElement('div');
@@ -142,9 +200,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 
 	/*--- setuping game round ---*/
 	for(let i = 0; i < length; i++){
-		if(!inheriting){
-			ctx.clearRect(0, 0, width, height);
-		}
+		canvasManager.clear();
 
 		const snakePositions = distrubuteSnakes(snakeTypes.length);
 		const states = new WeakMap(snakeTypes.map((snakeType, i) => [snakeType, {
@@ -157,12 +213,12 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		}]));
 		let living = [...snakeTypes];
 		let holeIndex = 0;
-
-		ctx.fillStyle = 'white';
-		ctx.fillRect(0, 0, width, wall);
-		ctx.fillRect(0, height - wall, width, wall);
-		ctx.fillRect(0, 0, wall, height);
-		ctx.fillRect(width - wall, 0, wall, height);
+		
+		canvasManager.setColor('255,255,255');
+		canvasManager.fillRect(0, 0, width, wall);
+		canvasManager.fillRect(0, height - wall, width, wall);
+		canvasManager.fillRect(0, 0, wall, height);
+		canvasManager.fillRect(width-wall, 0, wall, height);;
 		
 		const handleKeydown = ({code}) => {
 			for(const snakeType of living){
@@ -188,21 +244,17 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		gameLoop: while(true){
 			// break gameLoop;
 			
-			/*
-			upmoverCtx.putImageData(
-				fadeImageData(upmoverCtx.getImageData(0, 0, width, height), 8),
-				0, -2);
-				*/
+			// console.time('x');
 			holeIndex++;
 			if(holeIndex === holeFrom){
-				copyCtx.drawImage(canvas, 0, 0);
+				canvasClipboard.copy();
 			}else if(holeIndex > holeFrom){
-				ctx.drawImage(copyCanvas, 0, 0);
+				canvasClipboard.paste();
 			}
 			if(holeIndex === holeCycle){
 				holeIndex = 0;
 			}
-				
+			
 			let newDeads;
 			[newDeads, living] = partition(living, snakeType => {
 				const state = states.get(snakeType);
@@ -235,7 +287,6 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 				const ex = floor(state.x);
 				const ey = floor(state.y);
 				
-				const image = ctx.getImageData(ex, ey, snakeSize, snakeSize).data;
 				collisionLoop: for(let x = ex; x < ex + snakeSize; x++){
 					for(let y = ey; y < ey + snakeSize; y++){
 						if(
@@ -244,34 +295,25 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 								y >= lastPosition.y && y < lastPosition.y + snakeSize
 							)
 						) continue;
-						const index = ((y-ey) * snakeSize + (x-ex)) * 4;
-						const color = [image[index], image[index + 1], image[index + 2]].join(',');
+						const color = canvasManager.getPixel(x, y).join(',');
 						if(colors.has(color)){
+							
+							/*
 							console.log('the died snake', snakeType);
 							console.log('your last positions', state.lastPositions);
 							console.log('your new state', state);
 							console.log('the colliding pixel position', x, y);
 							console.log('the color of the pixel', color);
 							console.log('the index of the pixel', index);
+							*/
+							
 							return true;
 						}
 					}
 				}
-
-				/*
-				const collision = corners.some(corner => {
-					if(corner.x < 0 || corner.y < 0 || corner.x >= width || corner.y >= height) return true;
-					const image = ctx.getImageData(corner.x, corner.y, 1, 1).data;
-					const color = [image[0], image[1], image[2]].join(',');
-					if(colors.has(color)){
-						return true;
-					}
-				});
-				*/
-
-				ctx.fillStyle = 'rgb(' + snakeType.color + ')';
-				ctx.fillRect(floor(state.x), floor(state.y), 4, 4);
-			//	ctx.arc(state.x, state.y, 2, 0, PI*2);
+				
+				canvasManager.setColor(snakeType.color);
+				canvasManager.fillRect(floor(state.x), floor(state.y), 4, 4);
 			});
 
 			if(newDeads.length > 0){
@@ -281,6 +323,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 					scores.set(snakeType, score);
 				}
 			}
+			// console.timeEnd('x');
 			if(living.length <= 1) break gameLoop;
 			await waitFrame();
 		}
