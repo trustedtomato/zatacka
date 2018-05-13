@@ -1,5 +1,4 @@
 // Radians should in the range of [-PI;PI]
-// TODO: white wall
 
 
 /*--- pure helper functions ---*/
@@ -34,12 +33,8 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('keydown', e => {
 	e.preventDefault();
 });
-const colorToRGBArr = str => {
-	const colorArr = new Uint8Array(3);
-	colorArr.set(str.split(/\s*,\s*/g));
-	return colorArr;
-};
-class CanvasRGBDataManager{
+
+class CanvasBooleanDataManager{
 	constructor(canvas){
 		this.width = canvas.width;
 		this.height = canvas.height;
@@ -49,29 +44,28 @@ class CanvasRGBDataManager{
 	}
 	clear(){
 		this.ctx.clearRect(0, 0, this.width, this.height);
-		this.data = new Uint8ClampedArray(this.width * this.height * 3);
+		this.data = new Uint8Array(this.width * this.height);
 	}
 	setColor(str){
 		this.ctx.fillStyle = 'rgb(' + str + ')';
-		this.color = colorToRGBArr(str);
 	}
 	fillRect(x, y, width, height){
 		if(width === 0 || height === 0) return;
 		this.ctx.fillRect(x, y, width, height);
-		let index = (y * this.width + x) * 3;
-		this.data.set(this.color, index);
+		const index = y * this.width + x;
+		this.data[index] = 1;
 
 		let i, j;
-		for(i = index + 3; i < index + width * 3; i += 3){
-			this.data.copyWithin(i, index, index + 3);
+		for(i = index + 1; i < index + width; i++){
+			this.data.copyWithin(i, index, index + 1);
 		}
-		for(j = index + this.width * 3; j < index + height * this.width * 3; j += this.width * 3){
+		for(j = index + this.width; j < index + height * this.width; j += this.width){
 			this.data.copyWithin(j, index, i);
 		}
 	}
-	getPixel(x, y){
-		const index = (y * this.width + x) * 3;
-		return this.data.subarray(index, index + 3);
+	isFilled(x, y){
+		const index = y * this.width + x;
+		return !!this.data[index];
 	}
 	createClipboard(){
 		const self = this;
@@ -171,8 +165,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		canvas.height = height;
 	}
 
-	const canvasManager = new CanvasRGBDataManager(canvas);
-	console.log('estimated memory usage: ', 2 * window.innerWidth * window.innerHeight * 3 / 1024 / 1024 + ' MiB');
+	const canvasManager = new CanvasBooleanDataManager(canvas);
 	const canvasClipboard = canvasManager.createClipboard();
 
 	const colors = new Set(snakeTypes.map(snakeType => snakeType.color).concat(['255,255,255']));
@@ -218,7 +211,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		canvasManager.fillRect(0, 0, width, wall);
 		canvasManager.fillRect(0, height - wall, width, wall);
 		canvasManager.fillRect(0, 0, wall, height);
-		canvasManager.fillRect(width-wall, 0, wall, height);;
+		canvasManager.fillRect(width-wall, 0, wall, height);
 		
 		const handleKeydown = ({code}) => {
 			for(const snakeType of living){
@@ -295,8 +288,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 								y >= lastPosition.y && y < lastPosition.y + snakeSize
 							)
 						) continue;
-						const color = canvasManager.getPixel(x, y).join(',');
-						if(colors.has(color)){
+						if(canvasManager.isFilled(x, y)){
 							
 							/*
 							console.log('the died snake', snakeType);
