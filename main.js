@@ -168,7 +168,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		return {scene: previousScene};
 	}
 
-	const length = 2;
+	const length = 10;
 	const scoreBoardWidth = 40;
 	const width = floor(window.innerWidth - scoreBoardWidth);
 	const height = floor(window.innerHeight);
