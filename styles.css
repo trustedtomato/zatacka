@@ -11,7 +11,15 @@ html, body{
 	width: 100%;
 	height: 100%;
 	background-color: black;
+	color: white;
 }
+*[aria-hidden]{
+	display: none !important;
+}
+#dialog{
+	transition: 1s;
+}
+
 #game{
 	display: flex;
 	justify-content: end;
@@ -58,4 +66,15 @@ canvas{
 }
 .important{
 	font-family: 'Courier New', Courier, monospace;
+}
+#dialog{
+	position: fixed;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	padding: 8px;
+	border: 1px solid white;
+	background-color: black;
+	font-family: 'Courier New', Courier, monospace;
+	text-align: center;
 }

@@ -168,7 +168,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		return {scene: previousScene};
 	}
 
-	const length = 10;
+	const length = 2;
 	const scoreBoardWidth = 40;
 	const width = floor(window.innerWidth - scoreBoardWidth);
 	const height = floor(window.innerHeight);
@@ -182,6 +182,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	const snakeSize = 4;
 	const upmoverSpeed = 2;
 	const upmoverFadeSpeed = 0.1;
+	const dialogTextTemplate = code => `Press [${code}] to continue...`;
 
 	const coinSize = 10;
 	const drawCoin = (snakeType, pos, ctx) => {
@@ -221,6 +222,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	window.ctx = canvas.getContext('2d', {alpha: false});
 	window.upm = upMover.getContext('2d');
 	window.upmC = upmoverClipboard.getContext('2d');
+	const dialog = document.getElementById('dialog');
 	const scoresEl = document.getElementById('scores');
 	scoresEl.style.width = window.innerWidth - width;
 
@@ -255,7 +257,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	};
 
 	/*--- setuping game round ---*/
-	for(let i = 0; i < length; i++){
+	partyLoop: for(let i = 0; i < length; i++){
 		canvasManager.clear();
 		upm.clearRect(0, 0, width, height);
 
@@ -430,16 +432,19 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 						scoreTextNodes.get(snakeType).nodeValue = score;
 						scores.set(snakeType, score);
 					}
+					if(living.length <= 1){
+						gameGoing = false;
+						const code = i + 1 === length ? 'Escape' : 'Space';
+						dialog.innerText = dialogTextTemplate(code);
+						dialog.removeAttribute('aria-hidden');
+						waitKeydown({code}).then(() => {
+							animationGoing = false;
+							dialog.setAttribute('aria-hidden', '');
+						});
+					}
 				}
 
 				perfs.push(performance.now() - performanceStart);
-
-				if(living.length <= 1){
-					gameGoing = false;
-					waitKeydown({code: 'Space'}).then(() => {
-						animationGoing = false;
-					});
-				}
 			}
 
 			await waitFrame();
