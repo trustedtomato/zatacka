@@ -2,7 +2,10 @@
 
 
 /*--- pure helper functions ---*/
-const {cos, sin, sqrt, random, floor, round, PI, atan, ceil} = Math;
+const {cos, sin, sqrt, random, floor, round, PI, atan, ceil, min, max} = Math;
+const EPSILON = Number.EPSILON * 100;
+const sum = arr => arr.reduce((a, b) => a + b );
+const average = arr => sum(arr) / arr.length;
 const partition = (arr, predicate) => {
 	const trues = [];
 	const falses = [];
@@ -15,6 +18,49 @@ const hasProperties = (obj, propObj) =>
 	typeof propObj !== 'object'
 	? typeof propObj === 'undefined' || obj === propObj
 	: Object.keys(propObj).every(key => hasProperties(obj[key], propObj[key]));
+
+const getLineBoundingBox = a => [{
+		x: min(a[0].x, a[1].x),
+		y: min(a[0].y, a[1].y)
+	},{
+		x: max(a[0].x, a[1].x),
+		y: max(a[0].y, a[1].y)
+	}];
+
+const doLinesIntersect_exp = (a, b) => {
+	const x1 = a[0].x;
+	const y1 = a[0].y;
+	const x2 = a[1].x;
+	const y2 = a[1].y;
+	const x3 = b[0].x;
+	const y3 = b[0].y;
+	const x4 = b[1].x;
+	const y4 = b[1].y;
+
+	const det = ((x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4));
+	if(det === 0) return false;
+	const x = ((x1*y2 - y1*x2)*(x3 - x4) - (x1 - x2)*(x3*y4 - y3*x4)) / det;
+
+	const _a = getLineBoundingBox(a);
+	const _b = getLineBoundingBox(b);
+	return _a[0].x <= x
+		&& _a[1].x >= x
+		&& _b[0].x <= x
+		&& _b[1].x >= x;
+};
+
+const doLineBoundingBoxesIntersect = (_a, _b) => {
+	const a = getLineBoundingBox(_a);
+	const b = getLineBoundingBox(_b);
+	return a[0].x <= b[1].x + EPSILON 
+		&& a[1].x >= b[0].x - EPSILON
+		&& a[0].y <= b[1].y + EPSILON
+		&& a[1].y >= b[0].y - EPSILON;
+};
+
+const doLinesIntersect = (a, b) =>
+	doLineBoundingBoxesIntersect(a, b)
+	&& doLinesIntersect_exp(a, b);
 
 const radiansToVec = rad => ({ x: cos(rad), y: sin(rad) });
 const multiplyVec = ({ x, y }, n) => ({ x: x * n, y: y * n });
@@ -134,6 +180,21 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	const holeCycle = 160;
 	const holeFrom = holeCycle - holeSize;
 	const snakeSize = 4;
+	const upmoverSpeed = 2;
+	const upmoverFadeSpeed = 0.1;
+
+	const coinSize = 10;
+	const drawCoin = (snakeType, pos, ctx) => {
+		ctx.fillStyle = 'yellow';
+		ctx.fillRect(pos.x - snakeSize / 2 - coinSize / 2, pos.y - snakeSize / 2 - coinSize / 2, coinSize, coinSize);
+	};
+
+	const deathCoinSize = 20;
+	const drawDeathCoin = (snakeType, pos, ctx) => {
+		ctx.fillStyle = 'red';
+		ctx.fillRect(pos.x - snakeSize / 2 - deathCoinSize / 2, pos.y - snakeSize / 2 - deathCoinSize / 2, deathCoinSize, deathCoinSize);
+	};
+
 	// I calculate that, at a maximum,
 	// how many cycles are needed for the snake to reach
 	// a state where the snake's new rectangle does not overlap
@@ -153,10 +214,13 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	
 	const canvases = [
 		document.getElementById('maincan'),
-		document.getElementById('upmover')
+		document.getElementById('upmover'),
+		document.createElement('canvas')
 	];
-	const [canvas, upMover] = canvases;
+	const [canvas, upMover, upmoverClipboard] = canvases;
 	window.ctx = canvas.getContext('2d', {alpha: false});
+	window.upm = upMover.getContext('2d');
+	window.upmC = upmoverClipboard.getContext('2d');
 	const scoresEl = document.getElementById('scores');
 	scoresEl.style.width = window.innerWidth - width;
 
@@ -168,7 +232,6 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	const canvasManager = new CanvasBooleanDataManager(canvas);
 	const canvasClipboard = canvasManager.createClipboard();
 
-	const colors = new Set(snakeTypes.map(snakeType => snakeType.color).concat(['255,255,255']));
 	const scores = mapWeakMap(snakeTypes, snakeType => 0);
 	removeChildren(scoresEl);
 	const scoreTextNodes = new WeakMap(snakeTypes.map(snakeType => {
@@ -194,24 +257,31 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	/*--- setuping game round ---*/
 	for(let i = 0; i < length; i++){
 		canvasManager.clear();
+		upm.clearRect(0, 0, width, height);
 
 		const snakePositions = distrubuteSnakes(snakeTypes.length);
 		const states = new WeakMap(snakeTypes.map((snakeType, i) => [snakeType, {
 			dir: PI * 2 * random() - PI,
 			left: false,
 			right: false,
+			lastHoleStartPosition: null,
 			lastPositions: [],
 			x: snakePositions[i].x,
 			y: snakePositions[i].y
 		}]));
 		let living = [...snakeTypes];
 		let holeIndex = 0;
+		const perfs = [];
+		let lines = [];
+		let gameGoing = true;
+		let animationGoing = true;
 		
 		canvasManager.setColor('255,255,255');
 		canvasManager.fillRect(0, 0, width, wall);
 		canvasManager.fillRect(0, height - wall, width, wall);
 		canvasManager.fillRect(0, 0, wall, height);
 		canvasManager.fillRect(width-wall, 0, wall, height);
+		upm.globalAlpha = 1 - upmoverFadeSpeed;
 		
 		const handleKeydown = ({code}) => {
 			for(const snakeType of living){
@@ -234,96 +304,155 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		document.addEventListener('keydown', handleKeydown);
 		document.addEventListener('keyup', handleKeyup);
 		
-		gameLoop: while(true){
-			// break gameLoop;
-			
-			// console.time('x');
-			holeIndex++;
-			if(holeIndex === holeFrom){
-				canvasClipboard.copy();
-			}else if(holeIndex > holeFrom){
-				canvasClipboard.paste();
-			}
-			if(holeIndex === holeCycle){
-				holeIndex = 0;
-			}
-			
-			let newDeads;
-			[newDeads, living] = partition(living, snakeType => {
-				const state = states.get(snakeType);
-				
-				if(state.left){
-					state.dir -= angularSpeed;
-					if(state.dir <= -PI){
-						state.dir = PI;
+		animationLoop: while(animationGoing){
+			// break animationLoop;
+
+			const performanceStart = performance.now();
+
+			upmC.clearRect(0, 0, width, height);
+			upmC.drawImage(upmover, 0, -upmoverSpeed);
+			upm.clearRect(0, 0, width, height);
+			upm.drawImage(upmoverClipboard, 0, 0);
+
+			if(gameGoing){
+				holeIndex++;
+				if(holeIndex === holeFrom){
+					for(const snakeType of snakeTypes){
+						const state = states.get(snakeType);
+						state.lastHoleStartPosition = {
+							x: floor(state.x) + snakeSize / 2,
+							y: floor(state.y) + snakeSize / 2
+						};
 					}
+					canvasClipboard.copy();
+				}else if(holeIndex > holeFrom){
+					canvasClipboard.paste();
 				}
-				if(state.right){
-					state.dir += angularSpeed;
-					if(state.dir > PI){
-						state.dir = -PI;
-					}
+				if(holeIndex === holeCycle){
+					lines.push(...snakeTypes.map(snakeType => {
+						const state = states.get(snakeType);
+						return[
+							state.lastHoleStartPosition,
+							{
+								x: floor(state.x) + snakeSize / 2,
+								y: floor(state.y) + snakeSize / 2
+							}
+						];
+					}));
+					
+					holeIndex = 0;
 				}
-
-				const moveVector = multiplyVec(radiansToVec(state.dir), speed);
-				state.lastPositions.unshift({
-					x: floor(state.x),
-					y: floor(state.y)
-				});
-				if(state.lastPositions.length > snakeBufferSize){
-					state.lastPositions.pop();
-				}
-
-				state.x += moveVector.x;
-				state.y += moveVector.y;
-
-				const ex = floor(state.x);
-				const ey = floor(state.y);
 				
-				collisionLoop: for(let x = ex; x < ex + snakeSize; x++){
-					for(let y = ey; y < ey + snakeSize; y++){
-						if(
-							state.lastPositions.some(lastPosition =>
-								x >= lastPosition.x && x < lastPosition.x + snakeSize &&
-								y >= lastPosition.y && y < lastPosition.y + snakeSize
-							)
-						) continue;
-						if(canvasManager.isFilled(x, y)){
-							
-							/*
-							console.log('the died snake', snakeType);
-							console.log('your last positions', state.lastPositions);
-							console.log('your new state', state);
-							console.log('the colliding pixel position', x, y);
-							console.log('the color of the pixel', color);
-							console.log('the index of the pixel', index);
-							*/
-							
-							return true;
+				let newDeads;
+				[newDeads, living] = partition(living, snakeType => {
+					const state = states.get(snakeType);
+					
+					if(state.left){
+						state.dir -= angularSpeed;
+						if(state.dir <= -PI){
+							state.dir = PI;
 						}
 					}
-				}
-				
-				canvasManager.setColor(snakeType.color);
-				canvasManager.fillRect(floor(state.x), floor(state.y), 4, 4);
-			});
+					if(state.right){
+						state.dir += angularSpeed;
+						if(state.dir > PI){
+							state.dir = -PI;
+						}
+					}
 
-			if(newDeads.length > 0){
-				for(const snakeType of living){
-					const score = scores.get(snakeType) + newDeads.length * 5;
-					scoreTextNodes.get(snakeType).nodeValue = score;
-					scores.set(snakeType, score);
+					const moveVector = multiplyVec(radiansToVec(state.dir), speed);
+					state.lastPositions.unshift({
+						x: floor(state.x),
+						y: floor(state.y)
+					});
+					if(state.lastPositions.length > snakeBufferSize){
+						state.lastPositions.pop();
+					}
+
+					const moveLine = [{
+						x: state.x + snakeSize / 2,
+						y: state.y + snakeSize / 2
+					},{
+						x: state.x + moveVector.x + snakeSize / 2,
+						y: state.y + moveVector.y + snakeSize / 2
+					}];
+					
+					if(holeIndex > 0){
+						let collidedLines;
+						[collidedLines, lines] = partition(lines, line => doLinesIntersect(moveLine, line));
+						if(collidedLines.length > 0){
+							const score = scores.get(snakeType) + collidedLines.length;
+							scoreTextNodes.get(snakeType).nodeValue = score;
+							scores.set(snakeType, score);
+							drawCoin(snakeType, state, upm);
+						}
+					}
+
+					state.x += moveVector.x;
+					state.y += moveVector.y;
+
+					const ex = floor(state.x);
+					const ey = floor(state.y);
+					
+					collisionLoop: for(let x = ex; x < ex + snakeSize; x++){
+						for(let y = ey; y < ey + snakeSize; y++){
+							if(
+								state.lastPositions.some(lastPosition =>
+									x >= lastPosition.x && x < lastPosition.x + snakeSize &&
+									y >= lastPosition.y && y < lastPosition.y + snakeSize
+								)
+							) continue;
+							if(canvasManager.isFilled(x, y)){
+								
+								drawDeathCoin(snakeType, state, upm);
+
+								/*
+								console.log('the died snake', snakeType);
+								console.log('your last positions', state.lastPositions);
+								console.log('your new state', state);
+								console.log('the colliding pixel position', x, y);
+								console.log('the color of the pixel', color);
+								console.log('the index of the pixel', index);
+								*/
+								
+								return true;
+							}
+						}
+					}
+					
+					canvasManager.setColor(snakeType.color);
+					canvasManager.fillRect(floor(state.x), floor(state.y), 4, 4);
+				});
+
+				if(newDeads.length > 0){
+					for(const snakeType of living){
+						const score = scores.get(snakeType) + newDeads.length * 5;
+						scoreTextNodes.get(snakeType).nodeValue = score;
+						scores.set(snakeType, score);
+					}
+				}
+
+				perfs.push(performance.now() - performanceStart);
+
+				if(living.length <= 1){
+					gameGoing = false;
+					waitKeydown({code: 'Space'}).then(() => {
+						animationGoing = false;
+					});
 				}
 			}
-			// console.timeEnd('x');
-			if(living.length <= 1) break gameLoop;
+
 			await waitFrame();
 		}
 
+		console.log('Best performance', min(...perfs));
+		console.log('Worst performance', max(...perfs));
+		console.log('Average performance', average(perfs));
+		window.lastPerfs = perfs;
+		console.log('Perfs saved to window.lastPerfs.');
+
 		document.removeEventListener('keydown', handleKeydown);
 		document.removeEventListener('keyup', handleKeyup);
-
-		await waitKeydown({code: 'Space'});
 	}
 
 	return{scene: previousScene};
