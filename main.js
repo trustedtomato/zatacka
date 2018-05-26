@@ -1,6 +1,14 @@
 // Radians should in the range of [-PI;PI]
 
 
+/*--- extract config ---*/
+const SEARCH_PARAMS = !window.location.search
+	? new Map()
+	: new Map(window.location.search.slice(1).split('&').map(q => q.split(/=/)));
+
+const debug = SEARCH_PARAMS.has('debug');
+
+
 /*--- pure helper functions ---*/
 const {cos, sin, sqrt, random, floor, round, PI, atan, ceil, min, max} = Math;
 const EPSILON = Number.EPSILON * 100;
@@ -43,10 +51,10 @@ const doLinesIntersect_exp = (a, b) => {
 
 	const _a = getLineBoundingBox(a);
 	const _b = getLineBoundingBox(b);
-	return _a[0].x <= x
-		&& _a[1].x >= x
-		&& _b[0].x <= x
-		&& _b[1].x >= x;
+	return _a[0].x <= x + EPSILON
+		&& _a[1].x >= x - EPSILON
+		&& _b[0].x <= x + EPSILON
+		&& _b[1].x >= x - EPSILON;
 };
 
 const doLineBoundingBoxesIntersect = (_a, _b) => {
@@ -114,20 +122,22 @@ class CanvasBooleanDataManager{
 		return !!this.data[index];
 	}
 	createClipboard(){
-		const self = this;
+		const manager = this;
 		const canvas = document.createElement('canvas');
 		canvas.width = this.width;
 		canvas.height = this.height;
 		const ctx = canvas.getContext('2d');
-		let data = this.data.slice();
+		const data = new Uint8Array(this.width * this.height);
 		return{
 			copy(){
-				ctx.drawImage(self.canvas, 0, 0);
-				data.set(self.data);
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				ctx.drawImage(manager.canvas, 0, 0);
+				data.set(manager.data, 0);
 			},
 			paste(){
-				self.data.set(data);
-				self.ctx.drawImage(canvas, 0, 0);
+				manager.data.set(data, 0);
+				manager.ctx.clearRect(0, 0, canvas.width, canvas.height);
+				manager.ctx.drawImage(canvas, 0, 0);
 			}
 		};
 	}
@@ -383,6 +393,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 						let collidedLines;
 						[collidedLines, lines] = partition(lines, line => doLinesIntersect(moveLine, line));
 						if(collidedLines.length > 0){
+							upm.strokeStyle = 'white';
 							const score = scores.get(snakeType) + collidedLines.length;
 							scoreTextNodes.get(snakeType).nodeValue = score;
 							scores.set(snakeType, score);
@@ -427,6 +438,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 				});
 
 				if(newDeads.length > 0){
+					await waitFrame();
 					for(const snakeType of living){
 						const score = scores.get(snakeType) + newDeads.length * 5;
 						scoreTextNodes.get(snakeType).nodeValue = score;
@@ -444,17 +456,19 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 					}
 				}
 
-				perfs.push(performance.now() - performanceStart);
+				if(debug) perfs.push(performance.now() - performanceStart);
 			}
 
 			await waitFrame();
 		}
 
-		console.log('Best performance', min(...perfs));
-		console.log('Worst performance', max(...perfs));
-		console.log('Average performance', average(perfs));
-		window.lastPerfs = perfs;
-		console.log('Perfs saved to window.lastPerfs.');
+		if(debug){
+			console.log('Best performance', min(...perfs));
+			console.log('Worst performance', max(...perfs));
+			console.log('Average performance', average(perfs));
+			window.lastPerfs = perfs;
+			console.log('Perfs saved to window.lastPerfs.');
+		}
 
 		document.removeEventListener('keydown', handleKeydown);
 		document.removeEventListener('keyup', handleKeyup);
