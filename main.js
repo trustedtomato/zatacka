@@ -1,6 +1,14 @@
 // Radians should in the range of [-PI;PI]
 
 
+/*--- polyfills ---*/
+if(typeof Array.prototype.flat !== 'function'){
+	Array.prototype.flat = function(){
+		return this.reduce((acc, val) => acc.concat(val), []);
+	}
+}
+
+
 /*--- extract config ---*/
 const SEARCH_PARAMS = !window.location.search
 	? new Map()
@@ -11,7 +19,7 @@ const debug = SEARCH_PARAMS.has('debug');
 
 /*--- pure helper functions ---*/
 const {cos, sin, sqrt, random, floor, round, PI, atan, ceil, min, max} = Math;
-const EPSILON = Number.EPSILON * 100;
+const EPSILON = 0.01;
 const sum = arr => arr.reduce((a, b) => a + b );
 const average = arr => sum(arr) / arr.length;
 const partition = (arr, predicate) => {
@@ -46,7 +54,14 @@ const doLinesIntersect_exp = (a, b) => {
 	const y4 = b[1].y;
 
 	const det = ((x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4));
-	if(det === 0) return false;
+	if(det === 0){
+		if(debug){
+			console.log('det is zero');
+			return false;
+		}else{
+			return true;
+		}
+	}
 	const x = ((x1*y2 - y1*x2)*(x3 - x4) - (x1 - x2)*(x3*y4 - y3*x4)) / det;
 
 	const _a = getLineBoundingBox(a);
@@ -147,21 +162,49 @@ class CanvasBooleanDataManager{
 /*--- impure helper functions ---*/
 const log = x => { console.log(x); return x; };
 const waitFrame = () => new Promise(requestAnimationFrame);
-const waitEvent = (el, eName, props) => new Promise(resolve => {
-	const listener = e => {
-		if(!hasProperties(e, props)) return;
-		resolve(e);
-		document.removeEventListener(eName, listener);
-	};
-	document.addEventListener(eName, listener);
-});
-const waitKeydown = props => waitEvent(document, 'keydown', props);
 const removeChildren = el => {
 	let c;
 	while(c = el.firstChild){
 		el.removeChild(c);
 	}
 };
+const listen = (() => {
+	const listen = (eventtarget, type, func, ...args) => {
+		if(Array.isArray(eventtarget)){
+			return eventtarget.forEach(et => listen(et, type, func, ...args));
+		}
+		if(Array.isArray(type)){
+			return type.forEach(t => listen(eventtarget, t, func, ...args));
+		}
+		eventtarget.addEventListener(type, func, ...args);
+	};
+	const removeListener = (eventtarget, type, func, ...args) => {
+		if(Array.isArray(eventtarget)){
+			return eventtarget.forEach(et => removeListener(et, type, func, ...args));
+		}
+		if(Array.isArray(type)){
+			return type.forEach(t => removeListener(eventtarget, t, func, ...args));
+		}
+		eventtarget.removeEventListener(type, func, ...args);
+	};
+	return (...args) => {
+		listen(...args);
+		return{
+			destroy: () => {
+				removeListener(...args);
+			}
+		};
+	};
+})();
+const waitEvent = (eventtarget, type, props) => new Promise(resolve => {
+	const callback = e => {
+		if(!hasProperties(e, props)) return;
+		resolve(e);
+		listener.destroy();
+	};
+	const listener = listen(eventtarget, type, callback);
+});
+const waitKeydown = props => waitEvent(document, 'keydown', props);
 
 
 /*--- scenes ---*/
@@ -186,13 +229,15 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	const speed = 1;
 	const angularSpeed = PI / 140 * speed;
 	const circleRadius = speed / angularSpeed;
-	const holeSize = floor(20 / speed);
+	const holeSize = floor(15 / speed);
 	const holeCycle = 160;
 	const holeFrom = holeCycle - holeSize;
 	const snakeSize = 4;
 	const upmoverSpeed = 2;
 	const upmoverFadeSpeed = 0.1;
-	const dialogTextTemplate = code => `Press [${code}] to continue...`;
+	const gamePausedText = 'Game paused. Press [Space] to continue...';
+	const gameEndedText = 'Press [Space] to continue...';
+	const partyEndedText = 'Game ended. Press [Escape] to quit...';
 
 	const coinSize = 10;
 	const drawCoin = (snakeType, pos, ctx) => {
@@ -234,7 +279,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	window.upmC = upmoverClipboard.getContext('2d');
 	const dialog = document.getElementById('dialog');
 	const scoresEl = document.getElementById('scores');
-	scoresEl.style.width = window.innerWidth - width;
+	scoresEl.style.width = scoreBoardWidth + 'px';
 
 	for(const canvas of canvases){
 		canvas.width = width;
@@ -270,6 +315,7 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 	partyLoop: for(let i = 0; i < length; i++){
 		canvasManager.clear();
 		upm.clearRect(0, 0, width, height);
+		dialog.setAttribute('aria-hidden', '');
 
 		const snakePositions = distrubuteSnakes(snakeTypes.length);
 		const states = new WeakMap(snakeTypes.map((snakeType, i) => [snakeType, {
@@ -294,27 +340,43 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 		canvasManager.fillRect(0, 0, wall, height);
 		canvasManager.fillRect(width-wall, 0, wall, height);
 		upm.globalAlpha = 1 - upmoverFadeSpeed;
-		
-		const handleKeydown = ({code}) => {
-			for(const snakeType of living){
-				if(snakeType.left === code){
-					states.get(snakeType).left = true;
-				}else if(snakeType.right === code){
-					states.get(snakeType).right = true;
+
+		const listeners = [
+			listen(document, 'keydown', ({code}) => {
+				if(code === 'Space'){
+					if(!gameGoing){
+						gameGoing = true;
+						dialog.setAttribute('aria-hidden', '');
+					}
+				}else if(code === 'Escape'){
+					if(gameGoing){
+						gameGoing = false;
+						dialog.innerText = gamePausedText;
+						dialog.removeAttribute('aria-hidden');
+					}else{
+						animationGoing = false;
+						i = Infinity;
+					}
+				}else{
+					for(const snakeType of living){
+						if(snakeType.left === code){
+							states.get(snakeType).left = true;
+						}else if(snakeType.right === code){
+							states.get(snakeType).right = true;
+						}
+					}
 				}
-			}
-		};
-		const handleKeyup = ({code}) => {
-			for(const snakeType of living){
-				if(snakeType.left === code){
-					states.get(snakeType).left = false;
-				}else if(snakeType.right === code){
-					states.get(snakeType).right = false;
+			}),
+			listen(document, 'keyup', ({code}) => {
+				for(const snakeType of living){
+					if(snakeType.left === code){
+						states.get(snakeType).left = false;
+					}else if(snakeType.right === code){
+						states.get(snakeType).right = false;
+					}
 				}
-			}
-		};
-		document.addEventListener('keydown', handleKeydown);
-		document.addEventListener('keyup', handleKeyup);
+			})
+		];
 		
 		animationLoop: while(animationGoing){
 			// break animationLoop;
@@ -332,8 +394,8 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 					for(const snakeType of snakeTypes){
 						const state = states.get(snakeType);
 						state.lastHoleStartPosition = {
-							x: floor(state.x) + snakeSize / 2,
-							y: floor(state.y) + snakeSize / 2
+							x: floor(state.x),
+							y: floor(state.y)
 						};
 					}
 					canvasClipboard.copy();
@@ -346,8 +408,8 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 						return[
 							state.lastHoleStartPosition,
 							{
-								x: floor(state.x) + snakeSize / 2,
-								y: floor(state.y) + snakeSize / 2
+								x: floor(state.x),
+								y: floor(state.y)
 							}
 						];
 					}));
@@ -382,11 +444,11 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 					}
 
 					const moveLine = [{
-						x: state.x + snakeSize / 2,
-						y: state.y + snakeSize / 2
+						x: state.x,
+						y: state.y
 					},{
-						x: state.x + moveVector.x + snakeSize / 2,
-						y: state.y + moveVector.y + snakeSize / 2
+						x: state.x + moveVector.x,
+						y: state.y + moveVector.y
 					}];
 					
 					if(holeIndex > 0){
@@ -438,7 +500,6 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 				});
 
 				if(newDeads.length > 0){
-					await waitFrame();
 					for(const snakeType of living){
 						const score = scores.get(snakeType) + newDeads.length * 5;
 						scoreTextNodes.get(snakeType).nodeValue = score;
@@ -446,13 +507,30 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 					}
 					if(living.length <= 1){
 						gameGoing = false;
-						const code = i + 1 === length ? 'Escape' : 'Space';
-						dialog.innerText = dialogTextTemplate(code);
+						listeners.forEach(listener => listener.destroy());
+
+						const navListeners = [
+							listen(document, 'keydown', e => {
+								if(e.code === 'Escape'){
+									animationGoing = false;
+									i = Infinity;
+									navListeners.forEach(listener => listener.destroy());
+								}
+							})
+						];
+
 						dialog.removeAttribute('aria-hidden');
-						waitKeydown({code}).then(() => {
-							animationGoing = false;
-							dialog.setAttribute('aria-hidden', '');
-						});
+						if(i + 1 === length){
+							dialog.innerText = partyEndedText;
+						}else{
+							navListeners.push(listen(document, 'keydown', e => {
+								if(e.code === 'Space'){
+									animationGoing = false;
+									navListeners.forEach(listener => listener.destroy());
+								}
+							}));
+							dialog.innerText = gameEndedText;
+						}
 					}
 				}
 
@@ -469,9 +547,6 @@ scenes.set(game, async ({scene, previousScene, snakeTypes}) => {
 			window.lastPerfs = perfs;
 			console.log('Perfs saved to window.lastPerfs.');
 		}
-
-		document.removeEventListener('keydown', handleKeydown);
-		document.removeEventListener('keyup', handleKeyup);
 	}
 
 	return{scene: previousScene};
@@ -483,7 +558,6 @@ scenes.set(startScreen, async () => {
 		{left: 'Backquote', right: 'Tab', color: '255,0,0'},
 		{left: 'Digit2', right: 'Digit3', color: '0,255,0'},
 		{left: 'Digit6', right: 'Digit7', color: '0,0,255'},
-	//	{left: 'Digit0', right: 'Minus', color: '255,120,0'},
 		{left: 'KeyS', right: 'KeyD', color: '0,255,255'},
 		{left: 'KeyH', right: 'KeyJ', color: '255,255,0'},
 		{left: 'ArrowDown', right: 'ArrowRight', color: '255,0,255'}
@@ -513,25 +587,21 @@ scenes.set(startScreen, async () => {
 			});
 		});
 		return row;
-		/*
-		[left, right].map(el => {
-			el.addEventListener('mousedown', async ({target}) => {
-				target.style.textDecoration = 'underline';
-				const e = await waitEvent(document, 'keydown');
-				target.style.textDecoration = '';
-				target.innerText = e.code;
-			});
-		});
-		*/
 	});
-	await waitEvent(document, 'keydown', {code: 'Space'});
-	removeChildren(players);
-	return{
-		scene: game,
-		snakeTypes: snakeTypes
+
+	while(true){
+		await waitEvent(document, 'keydown', {code: 'Space'});
+		const registeredSnakeTypes = snakeTypes
 			.filter(snakeType =>
 				rows.get(snakeType).hasAttribute('data-activated')
-			)
+			);
+		if(registeredSnakeTypes.length > 1){
+			removeChildren(players);
+			return{
+				scene: game,
+				snakeTypes: registeredSnakeTypes
+			};
+		}
 	}
 });
 

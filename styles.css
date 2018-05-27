@@ -73,3 +73,14 @@ canvas{
 	font-family: 'Courier New', Courier, monospace;
 	text-align: center;
 }
+.alert{
+	position: absolute;
+	bottom: 0;
+	padding: 8px;
+	width: 100%;
+	box-sizing: border-box;
+	background-color: #f00;
+}
+#instructions{
+	margin: 16px;
+}
