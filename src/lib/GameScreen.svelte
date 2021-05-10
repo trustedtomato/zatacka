@@ -55,7 +55,7 @@
   ]))
 
   const font = `${headSize * 8}px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif`
-  let deathImageContainer: HTMLElement
+  let imageContainer: HTMLElement
   const deathImageWidth = 50
   const deathImageHeight = 50
   const deathImagePromise = loadSvg('skull-with-crossbones.svg').then(svg => {
@@ -70,7 +70,7 @@
 
   const holePeriodTime = holePeriodLength / speed
   const holeTime = holeLength / speed
-  // If the snakes' moved more distance than this, there would be a gap in the snake.
+  // If the snakes moved more distance than this, there would be a gap in the snake.
   const maxDistancePerIteration = headSize
   // Accordingly to the max distance, the max time which can elapse
   // between two iteartions should be set. 
@@ -99,7 +99,7 @@
   const listeners: EventListener[] = []
 
   onMount(async () => {
-    // The browser shows a scrollbar else, don't really know why.
+    // The browser shows a scrollbar otherwise, don't really know why.
     document.body.style.overflow = 'hidden'
 
     for (const _canvas of [
@@ -115,17 +115,21 @@
     const isPointFatal = (x: number, y: number) =>
       ctx.isPointFilled(x, y) || tempCtx.isPointFilled(x, y)
 
+    /** Adds the element to the image container
+     * and returns an object with which you can fade out that element. */
     const addFadingOutElement = (el: HTMLElement) => {
       el.style.position = 'absolute'
       el.style.left = '0px'
       el.style.top = '0px'
       el.style.opacity = '0'
-      deathImageContainer.appendChild(el)
+      imageContainer.appendChild(el)
       const { width, height } = el.getBoundingClientRect()
       return {
         fadeOutFrom (x: number, y: number) {
+          // Center it.
           x -= width / 2
           y -= height / 2
+
           el.style.transform = `translate(${x}px, ${y}px`
           el.style.opacity = '1'
           el.style.transition = ''
@@ -375,7 +379,7 @@
 
           if (shouldDie) {
             alivePlayers.delete(player)
-            deathImages.get(player).fadeOutFrom(newPosition.x, newPosition.y)
+            deathImages.get(player)?.fadeOutFrom(newPosition.x, newPosition.y)
             for (const alivePlayer of alivePlayers) {
               scores.set(alivePlayer, scores.get(alivePlayer) + deathScore)
               scores = scores
@@ -441,7 +445,7 @@
   <div style="position: relative; flex-grow: 1">
     <canvas bind:this={canvas}></canvas>
     <canvas bind:this={tempCanvas}></canvas>
-    <div style="position: absolute; left: 0; top: 0" bind:this={deathImageContainer}></div>
+    <div style="position: absolute; left: 0; top: 0" bind:this={imageContainer} />
     {#if alertMessageHtml}
       <Alert>
         {@html alertMessageHtml }

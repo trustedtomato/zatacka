@@ -58,7 +58,7 @@
 </script>
 
 <div style="display: flex; flex-direction: column; align-items: center;">
-	<div>
+	<div style="width: min-content">
 		<h1>Zatacka</h1>
 		<table class="keyboard">
 			{#each keyboardLayout as row}
@@ -82,6 +82,8 @@
 	
 		<div style="margin: 1.5em 0">
 			<div>
+				Press a colored key to join with that color.
+				The keys with the same color are used for controlling the snake.
 				{#if !canStart}
 					Need at least two players to start.
 				{:else}
